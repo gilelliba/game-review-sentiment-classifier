@@ -1,7 +1,6 @@
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.ensemble import GradientBoostingRegressor
-import numpy as np
 
 class SentimentClassifier:
     def __init__(self):
