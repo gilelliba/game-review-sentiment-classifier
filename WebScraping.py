@@ -32,11 +32,13 @@ class MarvelRivalsReviewScraper:
                 rating_elem = review.find('div', class_='stars-top')
                 rating = rating_elem['style'] if rating_elem else "width:0%"
                 
-                self.reviews_data.append({
-                    'username': username,
-                    'review': review_text,
-                    'rating': rating
-                })
+                # Check for duplicates before appending
+                if not any(r['review'] == review_text and r['username'] == username for r in self.reviews_data):
+                    self.reviews_data.append({
+                        'username': username,
+                        'review': review_text,
+                        'rating': rating
+                    })
             except AttributeError as e:
                 print(f"Skipping malformed review: {e}")
                 continue
@@ -51,7 +53,7 @@ class MarvelRivalsReviewScraper:
                 EC.element_to_be_clickable((By.CSS_SELECTOR, "a.btn.btn-sm.btn-general[rel='next'][aria-label='next']"))
             )
             load_more.click()
-            time.sleep(2)  # Wait for new content to load
+            time.sleep(3)  # Increased wait time for new content to load
             return True
         except Exception as e:
             print(f"No more reviews to load or error: {e}")
