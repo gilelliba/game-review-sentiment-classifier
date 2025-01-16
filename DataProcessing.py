@@ -50,6 +50,9 @@ class ReviewProcessor:
         processed_df['review_english'] = processed_df['review'].apply(self.detect_and_translate)
         processed_df['review_clean'] = processed_df['review_english'].str.lower()
         
+        # Drop the original review, rating, and review_english columns
+        processed_df.drop(columns=['review', 'rating', 'review_english'], inplace=True)
+        
         return processed_df
 
 # Process the scraped reviews
