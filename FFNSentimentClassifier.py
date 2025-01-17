@@ -1,8 +1,8 @@
-import os
 import pandas as pd
 import torch
 import torch.nn as nn
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.model_selection import train_test_split
 
 class FFNModel(nn.Module):
     def __init__(self, input_size, hidden_size=256):
@@ -29,10 +29,9 @@ class FFNSentimentClassifier:
             stop_words='english'
         )
         self.model = None
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.model_path = 'ffn_model.pth'  # Path to save the model
+        self.device = torch.device('cpu')
 
-        # Gaming-specific words
+        # Initialize gaming-specific negative and positive words
         self.negative_words = {
             'terrible', 'worst', 'awful', 'horrible', 'bad', 'poor', 'garbage',
             'waste', 'trash', 'boring', 'hate', 'disappointing', 'disappointed',
@@ -52,22 +51,59 @@ class FFNSentimentClassifier:
             'competitive', 'rewarding', 'satisfying'
         }
 
+    def count_sentiment_words(self, text):
+        # Count positive and negative words in review
+        text = text.lower()
+        words = set(text.split())
+        
+        neg_count = sum(1 for word in words if word in self.negative_words)
+        pos_count = sum(1 for word in words if word in self.positive_words)
+        
+        return neg_count, pos_count
+
+    def get_sentiment_label(self, rating):
+        # Convert rating to sentiment category
+        if rating >= 3.5:
+            return "Positive"
+        elif rating < 2.5:
+            return "Negative"
+        else:
+            return "Neutral"
+
+    def evaluate(self, X_test_vectorized, y_test):
+        self.model.eval()
+        with torch.no_grad():
+            X_test_tensor = torch.FloatTensor(X_test_vectorized.toarray()).to(self.device)
+            y_test_tensor = torch.FloatTensor(y_test.values).to(self.device)
+            outputs = self.model(X_test_tensor)
+            loss = nn.MSELoss()(outputs.squeeze(), y_test_tensor)
+            print(f'Test Loss: {loss.item():.4f}')
+
     def train(self, csv_path):
         print("Loading and training on review data...")
         df = pd.read_csv(csv_path)
         
-        X = self.vectorizer.fit_transform(df['review_clean'])
-        y = df['stars'].values
+        # Split the dataset into training and testing sets (80-20)
+        X_train, X_test, y_train, y_test = train_test_split(df['review_clean'], df['stars'], test_size=0.2, random_state=42)
         
-        input_size = X.shape[1]
+        # Fit the vectorizer on the training data
+        self.vectorizer.fit(X_train)
+        
+        # Transform both training and testing data
+        X_train_vectorized = self.vectorizer.transform(X_train)
+        X_test_vectorized = self.vectorizer.transform(X_test)
+
+        # Convert to tensors
+        X_tensor = torch.FloatTensor(X_train_vectorized.toarray()).to(self.device)
+        y_tensor = torch.FloatTensor(y_train.values).to(self.device)
+
+        # Initialize the model
+        input_size = X_tensor.shape[1]
         self.model = FFNModel(input_size).to(self.device)
-        
-        X_tensor = torch.FloatTensor(X.toarray()).to(self.device)
-        y_tensor = torch.FloatTensor(y).to(self.device)
-        
+
         optimizer = torch.optim.Adam(self.model.parameters())
         criterion = nn.MSELoss()
-        
+
         # Training loop
         for epoch in range(100):  # Adjust epochs as needed
             self.model.train()
@@ -81,39 +117,11 @@ class FFNSentimentClassifier:
         
         print("Training complete!")
 
-        # Save the model after training
-        self.save_model()
-        
-    def save_model(self):
-        torch.save(self.model.state_dict(), self.model_path)
-        print("Model saved!")
+        # After training, evaluate the model
+        self.evaluate(X_test_vectorized, y_test)
 
     def load_model(self):
-        if os.path.exists(self.model_path):
-            input_size = self.vectorizer.max_features  # Ensure this matches the fitted vectorizer
-            self.model = FFNModel(input_size).to(self.device)  # Initialize the model
-            self.model.load_state_dict(torch.load(self.model_path))  # Load the model state
-            self.model.eval()
-            print("Model loaded!")
-        else:
-            print("No saved model found. Please train the model first.")
-
-    def count_sentiment_words(self, text):
-        text = text.lower()
-        words = set(text.split())
-        
-        neg_count = sum(1 for word in words if word in self.negative_words)
-        pos_count = sum(1 for word in words if word in self.positive_words)
-        
-        return neg_count, pos_count
-
-    def get_sentiment_label(self, rating):
-        if rating >= 3.5:
-            return "Positive"
-        elif rating < 2.5:
-            return "Negative"
-        else:
-            return "Neutral"
+        print("Model loading is disabled.")
 
     def predict(self, review_text):
         self.model.eval()
@@ -138,7 +146,7 @@ class FFNSentimentClassifier:
         
         # Keep neutral reviews in middle range
         if neg_count == 0 and pos_count == 0:
-            rating = min(max(rating, 2.5), 3.5)
+            rating = max(rating, 2.5)  # Ensure a minimum rating of 2.5 for neutral reviews
         
         rating = round(rating * 2) / 2
         sentiment = self.get_sentiment_label(rating)
@@ -147,10 +155,7 @@ class FFNSentimentClassifier:
 
 def main():
     classifier = FFNSentimentClassifier()
-    if os.path.exists(classifier.model_path):
-        classifier.load_model()
-    else:
-        classifier.train('processed_game_reviews.csv')
+    classifier.train('processed_game_reviews.csv')
     
     while True:
         print("\n" + "="*50)
@@ -158,6 +163,7 @@ def main():
         if review.lower() == 'quit':
             break
         rating, sentiment, neg_count, pos_count = classifier.predict(review)
+        
         print("\nAnalysis Results:")
         print(f"Rating: {rating:.1f} stars")
         print(f"Sentiment: {sentiment}")
