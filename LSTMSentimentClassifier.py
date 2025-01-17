@@ -4,7 +4,8 @@ import torch
 import torch.nn as nn
 from sklearn.feature_extraction.text import TfidfVectorizer
 from torch.utils.data import DataLoader, Dataset
-import joblib  # Import joblib directly for saving the vectorizer
+import joblib
+import json
 
 class LSTMModel(nn.Module):
     def __init__(self, vocab_size, embedding_dim=100, hidden_dim=256):
@@ -36,6 +37,8 @@ class LSTMSentimentClassifier:
         self.model = None
         self.device = torch.device('cpu')
         self.model_path = 'lstm_model.pth'  # Path to save the model
+        self.vocab_size = None  # Initialize vocab_size
+        self.model = None  # Ensure model is initialized to None
 
         # Gaming-specific words
         self.negative_words = {
@@ -64,10 +67,18 @@ class LSTMSentimentClassifier:
         X = self.vectorizer.fit_transform(df['review_clean']).toarray()
         y = df['stars'].values
         
-        vocab_size = len(self.vectorizer.vocabulary_) + 1
-        self.model = LSTMModel(vocab_size).to(self.device)
+        self.vocab_size = len(self.vectorizer.vocabulary_) + 1  # Store vocab_size
+        with open('vocab_size.json', 'w') as f:  # Save vocab_size to a file
+            json.dump({'vocab_size': self.vocab_size}, f)
         
-        dataset = LSTMDataset(torch.LongTensor(X).to(self.device), torch.FloatTensor(y).to(self.device))
+        self.model = LSTMModel(self.vocab_size).to(self.device)  # Initialize model during training
+        
+        # Split the data into training and validation sets (80-20 split)
+        split_index = int(0.8 * len(X))
+        X_train, X_val = X[:split_index], X[split_index:]
+        y_train, y_val = y[:split_index], y[split_index:]
+
+        dataset = LSTMDataset(torch.LongTensor(X_train).to(self.device), torch.FloatTensor(y_train).to(self.device))
         dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
         
         optimizer = torch.optim.Adam(self.model.parameters())
@@ -91,8 +102,20 @@ class LSTMSentimentClassifier:
         torch.save(self.model.state_dict(), self.model_path)
         print("Model saved!")
 
+        # Save the fitted vectorizer
+        joblib.dump(self.vectorizer, 'vectorizer.pkl')  # Save the vectorizer
+        print("Vectorizer saved!")
+
     def load_model(self):
         if os.path.exists(self.model_path):
+            # Load vocab_size from the file
+            if os.path.exists('vocab_size.json'):
+                with open('vocab_size.json', 'r') as f:
+                    self.vocab_size = json.load(f)['vocab_size']
+            else:
+                raise ValueError("vocab_size file not found. Please train the model first.")
+                
+            self.model = LSTMModel(self.vocab_size).to(self.device)  # Use stored vocab_size
             self.model.load_state_dict(torch.load(self.model_path))
             self.model.eval()
             print("Model loaded!")
