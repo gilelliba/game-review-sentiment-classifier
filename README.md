@@ -24,6 +24,9 @@ This project provides an end-to-end solution for analyzing game reviews through:
 * Scikit-learn (Machine Learning)
 * NLTK (Text Processing)
 * Google Translator (Language Translation)
+* PyTorch (Deep Learning)
+* Transformers (BERT Model)
+* Joblib (Model Saving/Loading)
 
 ## Getting Started
 
